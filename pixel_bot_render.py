@@ -16,7 +16,7 @@ app = Flask(__name__)
 telegram_app = Application.builder().token(TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🏢 Pixel Bot on Render! พิมพ์คำถามได้เลย")
+    await update.message.reply_text("🏢 Pixel Bot on Render!\nพิมพ์คำถามได้เลย")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text

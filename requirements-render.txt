@@ -1,0 +1,14 @@
+openai
+python-telegram-bot
+python-dotenv
+yfinance
+feedparser
+langgraph
+langchain
+langchain-openai
+langchain-community
+pypdf
+unstructured
+python-docx
+requests
+flask
