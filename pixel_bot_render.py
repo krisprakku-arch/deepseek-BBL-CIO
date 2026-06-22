@@ -2,10 +2,9 @@ import os
 import logging
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 from orchestrator import run_orchestrator
-import asyncio
 
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -15,14 +14,14 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# ---------- สร้าง Application ----------
+# ---------- สร้าง Application (ใช้ async แต่เราจะใช้ sync wrapper) ----------
 telegram_app = Application.builder().token(TOKEN).build()
 
 # ---------- Handlers ----------
-async def start(update, context):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🏢 Pixel Bot on Render! พิมพ์คำถามได้เลย")
 
-async def handle_text(update, context):
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     progress = await update.message.reply_text("🤖 กำลังคิด...")
     try:
@@ -34,21 +33,25 @@ async def handle_text(update, context):
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-# ---------- Webhook (สร้าง Event Loop ใหม่ทุกครั้ง) ----------
+# ---------- Sync Wrapper สำหรับ Webhook ----------
+def process_update_sync(update: Update) -> None:
+    """ประมวลผล Update โดยใช้ event loop ใหม่แบบ sync"""
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(telegram_app.process_update(update))
+    finally:
+        loop.close()
+
+# ---------- Webhook (sync) ----------
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         update_data = request.get_json(force=True)
         update = Update.de_json(update_data, telegram_app.bot)
-        
-        # สร้าง Event Loop ใหม่ทุกครั้ง
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(telegram_app.process_update(update))
-            return 'ok', 200
-        finally:
-            loop.close()
+        process_update_sync(update)
+        return 'ok', 200
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return 'error', 500
@@ -62,16 +65,14 @@ def set_webhook():
     if not webhook_url:
         logger.error("WEBHOOK_URL not set")
         return
+    import asyncio
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(telegram_app.bot.set_webhook(url=webhook_url))
-            logger.info(f"Webhook set to {webhook_url}")
-        finally:
-            loop.close()
-    except Exception as e:
-        logger.error(f"Set webhook error: {e}")
+        loop.run_until_complete(telegram_app.bot.set_webhook(url=webhook_url))
+        logger.info(f"Webhook set to {webhook_url}")
+    finally:
+        loop.close()
 
 if __name__ == '__main__':
     if not TOKEN:
@@ -79,12 +80,13 @@ if __name__ == '__main__':
         exit(1)
     
     # Initialize Application
+    import asyncio
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(telegram_app.initialize())
         loop.run_until_complete(telegram_app.start())
-        logger.info("Telegram Application initialized and started")
+        logger.info("Telegram Application started")
     finally:
         loop.close()
     
