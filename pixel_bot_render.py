@@ -2,9 +2,10 @@ import os
 import logging
 from flask import Flask, request
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from dotenv import load_dotenv
 from orchestrator import run_orchestrator
+import asyncio
 
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -15,10 +16,11 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 telegram_app = Application.builder().token(TOKEN).build()
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🏢 Pixel Bot on Render!\nพิมพ์คำถามได้เลย")
+# ---------- Handlers (แบบ async ตามปกติ) ----------
+async def start(update, context):
+    await update.message.reply_text("🏢 Pixel Bot on Render! พิมพ์คำถามได้เลย")
 
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_text(update, context):
     text = update.message.text
     progress = await update.message.reply_text("🤖 กำลังคิด...")
     try:
@@ -30,12 +32,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
+# ---------- Webhook (แบบ synchronous) ----------
 @app.route('/webhook', methods=['POST'])
-async def webhook():
+def webhook():
     try:
         update_data = request.get_json(force=True)
         update = Update.de_json(update_data, telegram_app.bot)
-        await telegram_app.process_update(update)
+        # ใช้ asyncio.run() แทน async/await
+        asyncio.run(telegram_app.process_update(update))
         return 'ok', 200
     except Exception as e:
         logger.error(f"Webhook error: {e}")
@@ -50,14 +54,11 @@ def set_webhook():
     if not webhook_url:
         logger.error("WEBHOOK_URL not set")
         return
-    import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     try:
-        loop.run_until_complete(telegram_app.bot.set_webhook(url=webhook_url))
+        asyncio.run(telegram_app.bot.set_webhook(url=webhook_url))
         logger.info(f"Webhook set to {webhook_url}")
-    finally:
-        loop.close()
+    except Exception as e:
+        logger.error(f"Set webhook error: {e}")
 
 if __name__ == '__main__':
     if not TOKEN:
