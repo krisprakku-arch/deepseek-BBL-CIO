@@ -14,9 +14,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-telegram_app = Application.builder().token(TOKEN).build()
 
-# ---------- Handlers (แบบ async ตามปกติ) ----------
+# ---------- สร้างและ Initialize Application ----------
+telegram_app = Application.builder().token(TOKEN).build()
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+loop.run_until_complete(telegram_app.initialize())
+loop.run_until_complete(telegram_app.start())
+logger.info("Telegram Application initialized and started")
+
+# ---------- Handlers ----------
 async def start(update, context):
     await update.message.reply_text("🏢 Pixel Bot on Render! พิมพ์คำถามได้เลย")
 
@@ -32,14 +39,14 @@ async def handle_text(update, context):
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-# ---------- Webhook (แบบ synchronous) ----------
+# ---------- Webhook ----------
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         update_data = request.get_json(force=True)
         update = Update.de_json(update_data, telegram_app.bot)
-        # ใช้ asyncio.run() แทน async/await
-        asyncio.run(telegram_app.process_update(update))
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(telegram_app.process_update(update))
         return 'ok', 200
     except Exception as e:
         logger.error(f"Webhook error: {e}")
@@ -55,7 +62,8 @@ def set_webhook():
         logger.error("WEBHOOK_URL not set")
         return
     try:
-        asyncio.run(telegram_app.bot.set_webhook(url=webhook_url))
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(telegram_app.bot.set_webhook(url=webhook_url))
         logger.info(f"Webhook set to {webhook_url}")
     except Exception as e:
         logger.error(f"Set webhook error: {e}")
