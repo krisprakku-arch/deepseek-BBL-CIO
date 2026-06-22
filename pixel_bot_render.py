@@ -1,23 +1,15 @@
 import os
 import logging
-from flask import Flask, request
-from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from dotenv import load_dotenv
 from orchestrator import run_orchestrator
 import asyncio
-import sys
 
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
-
-# ---------- สร้าง Application ----------
-telegram_app = Application.builder().token(TOKEN).build()
 
 # ---------- Handlers ----------
 async def start(update, context):
@@ -32,43 +24,18 @@ async def handle_text(update, context):
     except Exception as e:
         await progress.edit_text(f"Error: {str(e)[:200]}")
 
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
-# ---------- Webhook (ใช้ asyncio.run ง่ายๆ) ----------
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    try:
-        update_data = request.get_json(force=True)
-        update = Update.de_json(update_data, telegram_app.bot)
-        # สร้าง event loop ใหม่ทุกครั้ง
-        asyncio.run(telegram_app.process_update(update))
-        return 'ok', 200
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return 'error', 500
-
-@app.route('/')
-def index():
-    return "Pixel Bot is running!"
-
 # ---------- Main ----------
-if __name__ == '__main__':
+def main():
     if not TOKEN:
         logger.error("TELEGRAM_BOT_TOKEN not set")
-        sys.exit(1)
+        return
 
-    # Initialize และ start Application
-    async def init():
-        await telegram_app.initialize()
-        await telegram_app.start()
-        webhook_url = os.getenv("WEBHOOK_URL")
-        if webhook_url:
-            await telegram_app.bot.set_webhook(url=webhook_url)
-            logger.info(f"Webhook set to {webhook_url}")
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    asyncio.run(init())
-    logger.info("Application initialized and started")
+    logger.info("Pixel Bot started (Polling mode)")
+    app.run_polling()
 
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+if __name__ == "__main__":
+    main()
