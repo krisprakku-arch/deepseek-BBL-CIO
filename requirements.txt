@@ -6,13 +6,5 @@ feedparser
 langgraph
 langchain
 langchain-openai
-chromadb
-sentence-transformers
-langchain-community
-pypdf
-unstructured
-python-docx
-tavily-python
-pandas-datareader
 requests
-flask
+flask[async]
