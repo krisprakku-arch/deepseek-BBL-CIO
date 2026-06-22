@@ -19,6 +19,10 @@ app = Flask(__name__)
 # ---------- สร้าง Application ----------
 telegram_app = Application.builder().token(TOKEN).build()
 
+# ---------- สร้าง Event Loop หลัก ----------
+main_loop = asyncio.new_event_loop()
+asyncio.set_event_loop(main_loop)
+
 # ---------- Handlers ----------
 async def start(update, context):
     await update.message.reply_text("🏢 Pixel Bot on Render! พิมพ์คำถามได้เลย")
@@ -35,14 +39,18 @@ async def handle_text(update, context):
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-# ---------- Webhook (ใช้ run_until_complete) ----------
+# ---------- Webhook (ใช้ main_loop) ----------
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
         update_data = request.get_json(force=True)
         update = Update.de_json(update_data, telegram_app.bot)
-        # ใช้ asyncio.run() (Python 3.7+) แทนการสร้าง loop เอง
-        asyncio.run(telegram_app.process_update(update))
+        # ใช้ main_loop แทนการสร้าง loop ใหม่
+        future = asyncio.run_coroutine_threadsafe(
+            telegram_app.process_update(update),
+            main_loop
+        )
+        future.result(timeout=30)  # รอไม่เกิน 30 วินาที
         return 'ok', 200
     except Exception as e:
         logger.error(f"Webhook error: {e}")
@@ -58,7 +66,7 @@ if __name__ == '__main__':
         logger.error("TELEGRAM_BOT_TOKEN not set")
         sys.exit(1)
 
-    # Initialize Application
+    # เริ่มต้น Application ใน main_loop
     async def init():
         await telegram_app.initialize()
         await telegram_app.start()
@@ -67,8 +75,16 @@ if __name__ == '__main__':
             await telegram_app.bot.set_webhook(url=webhook_url)
             logger.info(f"Webhook set to {webhook_url}")
 
-    asyncio.run(init())
-    logger.info("Application initialized")
+    main_loop.run_until_complete(init())
+    logger.info("Application initialized and running")
+
+    # เริ่ม background task เพื่อให้ loop ทำงาน
+    def run_loop():
+        main_loop.run_forever()
+
+    import threading
+    thread = threading.Thread(target=run_loop, daemon=True)
+    thread.start()
 
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
